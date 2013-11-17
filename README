@@ -1,0 +1,3 @@
+
+Code examples for using the V4L2 (Video-For-Linux, v2) API to retrieve
+camera images from webcams etc. using Linux.
