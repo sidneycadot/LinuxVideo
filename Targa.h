@@ -1,27 +1,30 @@
 
-/*************/
-/** targa.h **/
-/*************/
+/////////////
+// targa.h //
+/////////////
 
-#ifndef TARGA_H
-#define TARGA_H
+#ifndef Targa_h
+#define Targa_h
 
-struct Targa {
-  unsigned char header[18];
-  unsigned char rgbdata[1];
+#include <vector>
+#include <cstdint>
+
+class Targa
+{
+    public:
+
+        Targa(const uint16_t width, const uint16_t height);
+
+        uint16_t width() const;
+        uint16_t height() const;
+
+        const std::vector<uint8_t> & dvec() const;
+
+        uint8_t * rgb_data();
+
+    private:
+
+    std::vector<uint8_t> v;
 };
 
-typedef struct Targa *TargaPtr;
-
-TargaPtr targa_alloc(const unsigned short width, const unsigned short height);
-void targa_free(const TargaPtr T);
-
-unsigned short targa_width(const TargaPtr T);
-unsigned short targa_height(const TargaPtr T);
-
-void targa_plot(TargaPtr T, unsigned x, unsigned y,
-                unsigned char R, unsigned char G, unsigned char B);
-
-unsigned long targa_bytesize(const TargaPtr T);
-
-#endif
+#endif // Targa_h

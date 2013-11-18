@@ -7,17 +7,19 @@
 //
 //    http://linuxtv.org/downloads/v4l-dvb-apis/
 
-#include <iostream>
-
 #include <fcntl.h>
 #include <libv4l2.h>
 #include <linux/videodev2.h>
 
+#include <fstream>
+#include <iostream>
+
 #include <cassert>
-#include <string>
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
+
+#include "Targa.h"
 
 using namespace std;
 
@@ -32,7 +34,7 @@ static string pixelformat_to_string(uint32_t format)
     return s;
 }
 
-static void grab_images(const int fd)
+static void grab_image(const int fd)
 {
     const unsigned HPIX = 1920;
     const unsigned VPIX = 1080;
@@ -57,7 +59,7 @@ static void grab_images(const int fd)
 
         fmt.fmt.pix.width       = HPIX;
         fmt.fmt.pix.height      = VPIX;
-        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_BGR24;
         fmt.fmt.pix.field       = V4L2_FIELD_NONE;
 
         ioctlResult = v4l2_ioctl(fd, VIDIOC_S_FMT, &fmt);
@@ -72,18 +74,15 @@ static void grab_images(const int fd)
         cout << "fmt.pix.bytesperline ...... : " << fmt.fmt.pix.bytesperline                       << endl << endl;
     }
 
-    unsigned size = VPIX * HPIX * 3;
+    Targa tga(HPIX, VPIX);
 
-    char * buf = new char[size];
+    unsigned size = tga.height() * tga.width() * 3;
+    ssize_t readResult = v4l2_read(fd, tga.rgb_data(), size);
+    assert(readResult == size);
 
-    for (int frame = 0; frame < 100; ++frame)
-    {
-        cout << frame << endl;
-        ssize_t readResult = v4l2_read(fd, buf, size);
-        assert(readResult == size);
-    }
-
-    delete [] buf;
+    std::ofstream f("grab.tga");
+    f.write(reinterpret_cast<const char *>(tga.dvec().data()), tga.dvec().size());
+    f.close();
 }
 
 static bool try_resolution(const int fd, const unsigned width, const unsigned height)
@@ -262,8 +261,8 @@ int main(int argc, char ** argv)
         }
         else if (arg == "grab")
         {
-            cout << "Grab 100 images ..." << endl;
-            grab_images(fd);
+            cout << "Grabbing image ..." << endl;
+            grab_image(fd);
         }
     }
 
