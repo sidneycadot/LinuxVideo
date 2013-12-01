@@ -36,7 +36,7 @@ const std::vector<uint8_t> & Targa::dvec() const
     return v;
 }
 
-uint8_t * Targa::rgb_data()
+uint8_t * Targa::bgr_data()
 {
     return &v[18];
 }

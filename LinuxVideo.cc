@@ -13,6 +13,8 @@
 
 #include <fstream>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 
 #include <cassert>
 #include <cerrno>
@@ -34,11 +36,8 @@ static string pixelformat_to_string(uint32_t format)
     return s;
 }
 
-static void grab_image(const int fd)
+static void grab_images(const int fd, const unsigned width, const unsigned height, const unsigned num_frames)
 {
-    const unsigned HPIX = 1920;
-    const unsigned VPIX = 1080;
-
     if (true) // query & set format
     {
         struct v4l2_format fmt;
@@ -49,40 +48,38 @@ static void grab_image(const int fd)
         ioctlResult = v4l2_ioctl(fd, VIDIOC_G_FMT, &fmt);
         assert(ioctlResult == 0);
 
-        cout << "BEFORE:" << endl << endl;
-
-        cout << "fmt.pix.width ............. : " << fmt.fmt.pix.width                              << endl;
-        cout << "fmt.pix.height ............ : " << fmt.fmt.pix.height                             << endl;
-        cout << "fmt.pix.pixelformat ....... : " << pixelformat_to_string(fmt.fmt.pix.pixelformat) << endl;
-        cout << "fmt.pix.field ............. : " << fmt.fmt.pix.field                              << endl;
-        cout << "fmt.pix.bytesperline ...... : " << fmt.fmt.pix.bytesperline                       << endl << endl;
-
-        fmt.fmt.pix.width       = HPIX;
-        fmt.fmt.pix.height      = VPIX;
+        fmt.fmt.pix.width       = width;
+        fmt.fmt.pix.height      = height;
         fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_BGR24;
         fmt.fmt.pix.field       = V4L2_FIELD_NONE;
 
         ioctlResult = v4l2_ioctl(fd, VIDIOC_S_FMT, &fmt);
         assert(ioctlResult == 0);
-
-        cout << "AFTER:" << endl << endl;
-
-        cout << "fmt.pix.width ............. : " << fmt.fmt.pix.width                              << endl;
-        cout << "fmt.pix.height ............ : " << fmt.fmt.pix.height                             << endl;
-        cout << "fmt.pix.pixelformat ....... : " << pixelformat_to_string(fmt.fmt.pix.pixelformat) << endl;
-        cout << "fmt.pix.field ............. : " << fmt.fmt.pix.field                              << endl;
-        cout << "fmt.pix.bytesperline ...... : " << fmt.fmt.pix.bytesperline                       << endl << endl;
     }
 
-    Targa tga(HPIX, VPIX);
+    unsigned num_digits = to_string(num_frames - 1).size();
 
-    unsigned size = tga.height() * tga.width() * 3;
-    ssize_t readResult = v4l2_read(fd, tga.rgb_data(), size);
-    assert(readResult == size);
+    Targa tga(width, height);
+    const unsigned size = height * width * 3;
 
-    std::ofstream f("grab.tga");
-    f.write(reinterpret_cast<const char *>(tga.dvec().data()), tga.dvec().size());
-    f.close();
+    for (unsigned frame = 0; frame < num_frames; ++frame)
+    {
+        ssize_t readResult = v4l2_read(fd, tga.bgr_data(), size);
+        if (readResult != size)
+        {
+            cout << "readResult: " << readResult << endl;
+        }
+        assert(readResult == size);
+
+        ostringstream ss_filename;
+
+        ss_filename << "frame_" << setw(num_digits) << frame << ".tga";
+
+        cout << "Writing \"" << ss_filename.str() << "\" ..." << endl;
+        std::ofstream f(ss_filename.str());
+        f.write(reinterpret_cast<const char *>(tga.dvec().data()), tga.dvec().size());
+        f.close();
+    }
 }
 
 static bool try_resolution(const int fd, const unsigned width, const unsigned height)
@@ -245,6 +242,8 @@ int main(int argc, char ** argv)
 
     assert(fd >= 0);
 
+    cout << "Device \"" << device_name << "\" succesfully opened, file descriptor = " << fd << "." << endl;
+
     for (int i = 1; i < argc; ++i)
     {
         string arg = argv[i];
@@ -262,7 +261,7 @@ int main(int argc, char ** argv)
         else if (arg == "grab")
         {
             cout << "Grabbing image ..." << endl;
-            grab_image(fd);
+            grab_images(fd, 640, 480, 100);
         }
     }
 

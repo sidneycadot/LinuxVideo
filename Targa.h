@@ -20,7 +20,7 @@ class Targa
 
         const std::vector<uint8_t> & dvec() const;
 
-        uint8_t * rgb_data();
+        uint8_t * bgr_data(); // color order is Blue/Green/Red
 
     private:
 
