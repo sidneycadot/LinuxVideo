@@ -3,7 +3,7 @@
 // LinuxVideo.cc //
 ///////////////////
 
-// API documentation appears to be here:
+// API documentation is here:
 //
 //    http://linuxtv.org/downloads/v4l-dvb-apis/
 
@@ -68,6 +68,7 @@ static void grab_images(const int fd, const unsigned width, const unsigned heigh
         if (readResult != size)
         {
             cout << "readResult: " << readResult << endl;
+            cout << "size: " << size << endl;
         }
         assert(readResult == size);
 
@@ -82,27 +83,6 @@ static void grab_images(const int fd, const unsigned width, const unsigned heigh
     }
 }
 
-static bool try_resolution(const int fd, const unsigned width, const unsigned height)
-{
-    struct v4l2_format fmt;
-    int ioctlResult;
-
-    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
-    ioctlResult = v4l2_ioctl(fd, VIDIOC_G_FMT, &fmt);
-    assert(ioctlResult == 0);
-
-    fmt.fmt.pix.width       = width;
-    fmt.fmt.pix.height      = height;
-    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
-    fmt.fmt.pix.field       = V4L2_FIELD_NONE;
-
-    ioctlResult = v4l2_ioctl(fd, VIDIOC_S_FMT, &fmt);
-    assert(ioctlResult == 0);
-
-    return (fmt.fmt.pix.width == width) && (fmt.fmt.pix.height == height )&& (fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_RGB24) && (fmt.fmt.pix.field == V4L2_FIELD_NONE);
-}
-
 static unsigned gcd(unsigned a, unsigned b)
 {
     while (a != 0)
@@ -113,28 +93,7 @@ static unsigned gcd(unsigned a, unsigned b)
     return b;
 }
 
-static void resolution_scan(int fd)
-{
-    for (unsigned height = 0; height <= 8000; height += 1)
-    {
-        if (height % 1 == 0)
-        {
-            cout << "Scanning: height = " << height << endl;
-        }
-
-        for (unsigned width = 0; width <= 8000; width += 1)
-        {
-            const bool ok = try_resolution(fd, width, height);
-            if (ok)
-            {
-                unsigned g = gcd(width, height);
-                cout << "Found supported resolution: " << width << "x" << height << " (" << (width / g) << ":" << (height / g) << " ; " << g << ")" << endl;
-            }
-        }
-    }
-}
-
-static void show_formats(int fd)
+static void list_formats(int fd)
 {
     const unsigned num_types = 5;
 
@@ -156,9 +115,9 @@ static void show_formats(int fd)
 
     for (unsigned type_index = 0; type_index < num_types; ++type_index)
     {
-        unsigned format_index = 0;
+        // loop over the pixel formats
 
-        while (1)
+        for (unsigned format_index = 0; ; ++format_index)
         {
             struct v4l2_fmtdesc format;
 
@@ -168,16 +127,21 @@ static void show_formats(int fd)
             int rv = v4l2_ioctl(fd, VIDIOC_ENUM_FMT, &format);
             if (rv != 0)
             {
+                // rv == -1 indicates we have exhausted all valid pixel formats.
+
                 assert(rv == -1);
                 assert(errno == EINVAL);
                 break;
             }
 
-            // We have a valid format!
+            // We have a valid pixel format!
+
             assert(format.type == types[type_index]);
             assert(format.index == format_index);
 
-            cout << "format.type ............. : " << format.type << "(" << type_names[type_index] << ")" << endl;
+            // Print it.
+
+            cout << "format.type ............. : " << format.type << " (" << type_names[type_index] << ")" << endl;
             cout << "format.index ............ : " << format.index << endl;
             cout << "format.flags ............ : " << format.flags << endl;
             cout << "format.description ...... : \"" << format.description << "\"" << endl;
@@ -185,42 +149,53 @@ static void show_formats(int fd)
             cout << endl;
 
             // Now let's enumerate frame sizes for this pixel format...
+
+            for (unsigned framesize_index = 0; ; ++framesize_index)
             {
-                unsigned framesize_index = 0;
+                struct v4l2_frmsizeenum framesize;
 
-                while (1)
+                framesize.index = framesize_index;
+                framesize.pixel_format = format.pixelformat;
+
+                int rv = v4l2_ioctl(fd, VIDIOC_ENUM_FRAMESIZES, &framesize);
+
+                if (rv != 0)
                 {
-                    struct v4l2_frmsizeenum framesize;
+                    assert(rv == -1);
+                    assert(errno == EINVAL);
+                    break;
+                }
 
-                    framesize.index = framesize_index;
-                    framesize.pixel_format = format.pixelformat;
+                assert(framesize.index == framesize_index);
+                assert(framesize.pixel_format == format.pixelformat);
+                assert(framesize.type == V4L2_FRMSIZE_TYPE_DISCRETE || framesize.type == V4L2_FRMSIZE_TYPE_CONTINUOUS || framesize.type == V4L2_FRMSIZE_TYPE_STEPWISE);
 
-                    int rv = v4l2_ioctl(fd, VIDIOC_ENUM_FRAMESIZES, &framesize);
-
-                    if (rv != 0)
+                switch (framesize.type)
+                {
+                    case V4L2_FRMSIZE_TYPE_DISCRETE:
                     {
-                        assert(rv == -1);
-                        assert(errno == EINVAL);
+                        const unsigned blocksize = gcd(framesize.discrete.width, framesize.discrete.height);
+                        cout << "  discrete: " << framesize.discrete.width << "x" << framesize.discrete.height << " [" << (framesize.discrete.width / blocksize) << ":" << (framesize.discrete.height / blocksize) << " with " << blocksize << "x" << blocksize << " blocks]" << endl;
                         break;
                     }
-
-                    assert(framesize.index == framesize_index);
-                    assert(framesize.pixel_format == format.pixelformat);
-                    assert(framesize.type == V4L2_FRMSIZE_TYPE_DISCRETE || framesize.type == V4L2_FRMSIZE_TYPE_CONTINUOUS || framesize.type == V4L2_FRMSIZE_TYPE_STEPWISE);
-
-                    if (framesize.type == V4L2_FRMSIZE_TYPE_DISCRETE)
+                    case V4L2_FRMSIZE_TYPE_CONTINUOUS:
                     {
-                        cout << "  discrete: " << framesize.discrete.width << "x" << framesize.discrete.height << endl;
+                        cout << "  continuous" << endl;
+                        break;
                     }
-
-                    ++framesize_index;
-
-                } // loop over frame sizes for the current pixel format
-            }
+                    case V4L2_FRMSIZE_TYPE_STEPWISE:
+                    {
+                        cout << "  stepwise" << endl;
+                        break;
+                    }
+                    default:
+                    {
+                        assert(false);
+                    }
+                }
+            } // loop over frame sizes for the current pixel format
 
             cout << endl;
-
-            ++format_index;
 
         } // loop over pixel formats
 
@@ -248,20 +223,22 @@ int main(int argc, char ** argv)
     {
         string arg = argv[i];
 
-        if (arg == "scan")
-        {
-            cout << "Performing resolution scan ..." << endl;
-            resolution_scan(fd);
-        }
-        else if (arg == "formats")
+        if (arg == "--list-formats")
         {
             cout << "Performing formats scan ..." << endl;
-            show_formats(fd);
+            list_formats(fd);
         }
-        else if (arg == "grab")
+        else if (arg == "--grab")
         {
-            cout << "Grabbing image ..." << endl;
-            grab_images(fd, 640, 480, 100);
+            unsigned hpix = 640;
+            unsigned vpix = 480;
+            unsigned num_frames = 100;
+
+            grab_images(fd, hpix, vpix, num_frames);
+        }
+        else
+        {
+            cout << "Unknown command line option \"" << arg << "\" ignored." << endl;
         }
     }
 
